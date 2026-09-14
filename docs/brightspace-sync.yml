@@ -1,0 +1,49 @@
+name: Brightspace → Notion sync
+
+# Replaces the two local crontab entries that used to run on the laptop:
+#   0  */3 * * *  scripts/sync-brightspace.sh
+#   20 */3 * * *  scripts/check-brightspace.sh
+# Both scripts are pure network I/O (ICS feed → Notion API) and idempotent,
+# so running them from a hosted runner is equivalent to running them locally.
+on:
+  schedule:
+    # Every 3 hours. NOTE: GitHub cron is always UTC, so the wall-clock times
+    # differ from the old local-time entries; the 3-hour cadence is unchanged.
+    - cron: '0 */3 * * *'
+  workflow_dispatch:        # lets you trigger a run by hand from the Actions tab
+
+concurrency:
+  # Never let a slow run overlap the next scheduled one — the sync writes to Notion.
+  group: brightspace-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Sync Brightspace assignments into Notion
+        env:
+          BRIGHTSPACE_ICS_URL: ${{ secrets.BRIGHTSPACE_ICS_URL }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: node scripts/sync-brightspace.mjs
+
+      - name: Audit the sync for the week ahead
+        # Runs even if the sync step failed — the audit is what tells you what
+        # is missing, and that is most useful precisely when the sync misbehaved.
+        # The script exits 1 on MISSING/DRIFT/STALE, which fails the run and makes
+        # GitHub email you. That replaces the old cron mail.
+        if: always()
+        env:
+          BRIGHTSPACE_ICS_URL: ${{ secrets.BRIGHTSPACE_ICS_URL }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+        run: node scripts/check-brightspace.mjs

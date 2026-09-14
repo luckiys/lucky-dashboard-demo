@@ -104,8 +104,10 @@ export default function NotionTasksWidget({ mode = "school" }: { mode?: "school"
   const [draftDate, setDraftDate] = useState("");
   const [draftTime, setDraftTime] = useState("");
 
+  /* Doesn't raise the spinner itself — the first load starts with it already up,
+     and the ↻ button raises it before calling in. Keeping it out of here is what
+     lets the effect below call this without an extra render on the way in. */
   const load = useCallback(() => {
-    setLoading(true);
     demoFetch("/api/notion")
       .then((r) => r.json())
       .then((d) => {
@@ -231,7 +233,7 @@ export default function NotionTasksWidget({ mode = "school" }: { mode?: "school"
           <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
             {activeCount} this week
           </span>
-          <button onClick={load} className="text-xs transition-opacity hover:opacity-70" style={{ color: "var(--text-secondary)" }}>↻</button>
+          <button onClick={() => { setLoading(true); load(); }} className="text-xs transition-opacity hover:opacity-70" style={{ color: "var(--text-secondary)" }}>↻</button>
         </div>
       </div>
 

@@ -31,8 +31,10 @@ export default function NewsWidget() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // The spinner is raised by the category button, not here: starting a request
+  // is what the effect is for, and flipping state on the way in is an extra
+  // render the switch itself can do.
   useEffect(() => {
-    setLoading(true);
     demoFetch(`/api/news?category=${category}`)
       .then((r) => r.json())
       .then((d) => { setArticles(d.articles ?? []); setLoading(false); })
@@ -47,7 +49,7 @@ export default function NewsWidget() {
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
-              onClick={() => setCategory(cat)}
+              onClick={() => { if (cat !== category) { setLoading(true); setCategory(cat); } }}
               className="text-xs px-2 py-1 rounded-lg capitalize transition-all"
               style={{
                 background: category === cat ? "rgba(201,242,79,0.2)" : "rgba(255,255,255,0.04)",

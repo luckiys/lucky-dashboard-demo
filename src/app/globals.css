@@ -784,7 +784,10 @@ input:focus, textarea:focus, select:focus {
 /* Lifts page content above the grain overlay. The :not() matters: this rule
    would otherwise beat Tailwind's `fixed` on the welcome overlay (same
    specificity, declared later) and drop it into the flow. */
-.dashboard-bg > *:not(.welcome-overlay) { position: relative; z-index: 2; }
+/* The overlays are exempt: this rule out-specifies a bare `.tour-root` /
+   `.welcome-overlay`, so without the exclusion it would override their own
+   `position: fixed` and drop them into the flow behind the grid. */
+.dashboard-bg > *:not(.welcome-overlay):not(.tour-root) { position: relative; z-index: 2; }
 /* Must out-specify the rule above, which would otherwise flatten the command
    bar back to z-index 2 and let grid cards paint over the shelf panel. */
 .dashboard-bg > .command-bar { z-index: 50; }

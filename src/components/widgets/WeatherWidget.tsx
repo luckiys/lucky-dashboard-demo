@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import WeatherIcon, { kindFor } from "@/components/WeatherIcon";
+import type { Forecast } from "@/lib/types";
 import { demoFetch } from "@/lib/demo/demoFetch";
 
 const LABELS: Record<string, string> = {
@@ -22,7 +23,7 @@ function describe(code: number) {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function WeatherWidget() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<Forecast | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -64,8 +65,8 @@ export default function WeatherWidget() {
   })) ?? [];
 
   // Shared scale for the per-day range bars, so bars are comparable across rows.
-  const maxT = Math.max(...forecastDays.map((d: any) => d.high), 1);
-  const minT = Math.min(...forecastDays.map((d: any) => d.low), 0);
+  const maxT = Math.max(...forecastDays.map((d) => d.high), 1);
+  const minT = Math.min(...forecastDays.map((d) => d.low), 0);
   const span = Math.max(maxT - minT, 1);
 
   return (
@@ -97,7 +98,7 @@ export default function WeatherWidget() {
       {/* 5-day forecast: one row per day with a low→high range bar.
           Rows spread across the leftover height so tall cards don't leave a gap. */}
       <div className="flex flex-col justify-between gap-1 mt-4 flex-1 min-h-0">
-        {forecastDays.map((d: any, i: number) => {
+        {forecastDays.map((d, i) => {
           const left = ((d.low - minT) / span) * 100;
           const width = Math.max(((d.high - d.low) / span) * 100, 6);
           return (

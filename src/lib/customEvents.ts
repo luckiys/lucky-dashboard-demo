@@ -20,11 +20,14 @@ const CHANGED = "lucky:events-changed";
 export function loadCustomEvents(): CustomEvent[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
     if (!Array.isArray(raw)) return [];
-    return raw.filter(
-      (e: any) => e && typeof e.id === "string" && typeof e.title === "string" && typeof e.start === "string"
-    ).map((e: any) => ({ ...e, custom: true as const }));
+    // Anything in localStorage is untrusted input — an older schema, a half-written
+    // value, or another tab's key. Validate the three fields the calendar reads
+    // rather than casting and hoping.
+    return (raw as Partial<CustomEvent>[])
+      .filter((e) => Boolean(e) && typeof e.id === "string" && typeof e.title === "string" && typeof e.start === "string")
+      .map((e) => ({ ...e, custom: true as const }) as CustomEvent);
   } catch {
     return [];
   }

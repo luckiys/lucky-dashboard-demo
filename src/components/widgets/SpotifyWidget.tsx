@@ -29,20 +29,24 @@ export default function SpotifyWidget() {
   const [dims, setDims] = useState({ w: 300, h: 360 });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const load = async () => {
-    try {
-      const d = await demoFetch("/api/spotify/now-playing", { cache: "no-store" }).then((r) => r.json());
-      setData(d);
-      if (typeof d.progress === "number") setLocalProgress(d.progress);
-    } catch {
-      setData({ connected: false });
-    }
-  };
+  /* Poll the player. Written as a promise chain rather than async/await so every
+     state write lands in a callback — nothing here runs synchronously with the
+     effect that starts it. */
+  const load = () =>
+    demoFetch("/api/spotify/now-playing", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: NowPlaying) => {
+        setData(d);
+        if (typeof d.progress === "number") setLocalProgress(d.progress);
+      })
+      .catch(() => setData({ connected: false }));
 
   useEffect(() => {
-    load();
     const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    // Kick off immediately rather than waiting out the first interval. Scheduled
+    // rather than called inline so the effect commits before the fetch starts.
+    const first = setTimeout(load, 0);
+    return () => { clearInterval(t); clearTimeout(first); };
   }, []);
 
   useEffect(() => {

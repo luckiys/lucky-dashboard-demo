@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface Club {
   id: string;
@@ -19,15 +19,24 @@ const DEFAULT_CLUBS: Club[] = [
   { id: "natsec", name: "National Security Club", meets: "", location: "Lilly Hall", color: "#f97316" },
 ];
 
+/** Read once, when the component first mounts. The board doesn't render until
+ *  the client has hydrated, so this never runs on the server — the guard is
+ *  there so the module stays safe to import from anywhere. */
+function readClubs(): Club[] {
+  if (typeof window === "undefined") return DEFAULT_CLUBS;
+  try {
+    const raw = localStorage.getItem("lucky_clubs");
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as Club[]) : DEFAULT_CLUBS;
+  } catch {
+    return DEFAULT_CLUBS;
+  }
+}
+
 export default function ClubsWidget() {
-  const [clubs, setClubs] = useState<Club[]>(DEFAULT_CLUBS);
+  const [clubs, setClubs] = useState<Club[]>(readClubs);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", meets: "", location: "" });
-
-  useEffect(() => {
-    const s = localStorage.getItem("lucky_clubs");
-    if (s) { try { setClubs(JSON.parse(s)); } catch {} }
-  }, []);
 
   const save = (c: Club[]) => {
     setClubs(c);

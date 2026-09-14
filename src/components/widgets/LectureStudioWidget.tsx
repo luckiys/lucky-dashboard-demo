@@ -16,10 +16,21 @@ const TABS: { id: Kind; label: string; icon: string }[] = [
 interface Flashcard { front: string; back: string }
 interface QuizQ { question: string; options: string[]; answer: number; explanation?: string }
 
+/* Notes, summary and cheat sheet come back as prose. Flashcards and quizzes are
+   asked for as JSON; when the model doesn't comply the route returns the raw
+   string instead, which is why those two can still be a string here. */
+interface Results {
+  notes?: string;
+  summary?: string;
+  cheatsheet?: string;
+  flashcards?: Flashcard[] | string;
+  quiz?: QuizQ[] | string;
+}
+
 export default function LectureStudioWidget() {
   const [doc, setDoc] = useState<{ name: string; text: string; chars: number } | null>(null);
   const [tab, setTab] = useState<Kind>("notes");
-  const [results, setResults] = useState<Partial<Record<Kind, any>>>({});
+  const [results, setResults] = useState<Results>({});
   const [loading, setLoading] = useState<Kind | "upload" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pasting, setPasting] = useState(false);
@@ -37,8 +48,8 @@ export default function LectureStudioWidget() {
       if (!res.ok) throw new Error(d.error ?? "Upload failed");
       setDoc({ name: d.name, text: d.text, chars: d.chars });
       setResults({});
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
     setLoading(null);
   };
@@ -65,8 +76,8 @@ export default function LectureStudioWidget() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Generation failed");
       setResults((r) => ({ ...r, [kind]: d.data ?? d.content ?? d.raw }));
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
     setLoading(null);
   };

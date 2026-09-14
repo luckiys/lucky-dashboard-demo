@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { demoFetch } from "@/lib/demo/demoFetch";
+import type { ChatActionArgs, Forecast, Task } from "@/lib/types";
 
 interface Message { role: "user" | "assistant"; content: string }
 
 interface Props {
-  dashboardContext: { tasks?: any[]; weather?: any };
-  onAction?: (action: string, args: any) => void;
+  dashboardContext: { tasks?: Task[]; weather?: Forecast | null };
+  onAction?: (action: string, args: ChatActionArgs) => void;
 }
 
 const SUGGESTIONS = [

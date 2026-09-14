@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { ReactGridLayout, WidthProvider, type Layout, type LayoutItem } from "react-grid-layout/legacy";
 import ClockWidget from "@/components/widgets/ClockWidget";
 import WeatherWidget from "@/components/widgets/WeatherWidget";
@@ -21,6 +21,7 @@ import WidgetInfo from "@/components/demo/WidgetInfo";
 import { addCustomEvent, deleteCustomEventByTitle } from "@/lib/customEvents";
 import { demoFetch } from "@/lib/demo/demoFetch";
 import { ensureSeeded, resetDemo } from "@/lib/demo/store";
+import type { ChatActionArgs, Forecast, Task } from "@/lib/types";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 
@@ -158,6 +159,42 @@ function pickMins(l?: LayoutItem) {
   return l ? { minW: l.minW, minH: l.minH } : {};
 }
 
+/** The stored mode, validated. Anything unrecognised falls back to personal. */
+function readMode(): Mode {
+  if (typeof window === "undefined") return "personal";
+  try {
+    return localStorage.getItem(MODE_KEY) === "college" ? "college" : "personal";
+  } catch {
+    return "personal";
+  }
+}
+
+/** The stored layout for a mode, repaired, or the default when there isn't a
+ *  usable one. Module scope so the board's initial state can be read straight
+ *  out of localStorage instead of being patched in after the first paint. */
+function loadLayoutFor(m: Mode): Layout {
+  if (typeof window === "undefined") return DEFAULT_LAYOUTS[m];
+  try {
+    const saved = localStorage.getItem(LAYOUT_KEYS[m]);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Layout;
+      const ids = new Set(parsed.map((l) => l.i));
+      const complete = DEFAULT_LAYOUTS[m].every((l) => ids.has(l.i)) && parsed.length === DEFAULT_LAYOUTS[m].length;
+      if (complete) {
+        // Carry the current min sizes over: a layout saved before a widget's
+        // minimums changed would otherwise keep re-breaking on every load.
+        const mins = new Map(DEFAULT_LAYOUTS[m].map((l) => [l.i, l]));
+        const withMins = parsed.map((l) => ({ ...l, ...pickMins(mins.get(l.i)) }));
+        // Repair rather than discard — a single bad drop shouldn't cost the
+        // whole arrangement.
+        return sanitizeLayout(withMins, readShelf(m));
+      }
+      localStorage.removeItem(LAYOUT_KEYS[m]);
+    }
+  } catch {}
+  return DEFAULT_LAYOUTS[m];
+}
+
 function readShelf(m: Mode): string[] {
   try {
     const saved = JSON.parse(localStorage.getItem(SHELF_KEYS[m]) ?? "[]");
@@ -185,6 +222,10 @@ const WIDGET_LABELS: Record<string, string> = {
   clubs: "Clubs",
 };
 
+/** No external store to watch: `hydrated` only ever changes once, when React
+ *  swaps the server snapshot for the client one. */
+const subscribeNever = () => () => {};
+
 function Card({ children, highlight, onRemove, label, id }: {
   children: React.ReactNode; highlight?: boolean; onRemove?: () => void; label?: string; id: string;
 }) {
@@ -210,64 +251,53 @@ function Card({ children, highlight, onRemove, label, id }: {
 }
 
 export default function Dashboard() {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [weather, setWeather] = useState<any>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [weather, setWeather] = useState<Forecast | null>(null);
   const [notesRefreshKey, setNotesRefreshKey] = useState(0);
   const [linksRefreshKey, setLinksRefreshKey] = useState(0);
-  const [mode, setMode] = useState<Mode>("personal");
-  const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUTS.personal);
-  const [mounted, setMounted] = useState(false);
+  /* Read straight out of localStorage. These initializers also run on the server,
+     where the guards inside them return the defaults — but nothing is painted
+     until the client has hydrated, so the server's answer is never rendered. */
+  const [mode, setMode] = useState<Mode>(readMode);
+  const [layout, setLayout] = useState<Layout>(() => loadLayoutFor(readMode()));
   const [welcomeDone, setWelcomeDone] = useState(false);
   const [swapTargetId, setSwapTargetId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [shelved, setShelved] = useState<string[]>([]);
+  const [shelved, setShelved] = useState<string[]>(() => readShelf(readMode()));
   const [shelfOpen, setShelfOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
 
+  /* Has the client taken over from the server-rendered markup? The board reads
+     localStorage, so it cannot paint until then without a hydration mismatch.
+     There is nothing to subscribe to — the snapshot simply differs between
+     server and client, which is exactly what this hook is for, and unlike a
+     setState in an effect it doesn't schedule an extra render pass. */
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+
+  /* Mirrors of the three values the drag/resize callbacks need to read. Those
+     callbacks must stay identity-stable — re-creating them while a gesture is in
+     flight drops it — so they read the current board through a ref instead of
+     closing over it. Synced in an effect, never during render: a render can be
+     thrown away and re-run, and a ref written during one would keep the value
+     from the discarded attempt. Effects flush before the next user event, so the
+     handlers never see a stale board. */
   const layoutRef = useRef<Layout>(layout);
-  layoutRef.current = layout;
   const modeRef = useRef<Mode>(mode);
-  modeRef.current = mode;
   const shelvedRef = useRef<string[]>(shelved);
-  shelvedRef.current = shelved;
   const shelfBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    layoutRef.current = layout;
+    modeRef.current = mode;
+    shelvedRef.current = shelved;
+  }, [layout, mode, shelved]);
 
   // Only these render on the board; shelved widgets keep their layout entry.
   const visibleLayout = layout.filter((l) => !shelved.includes(l.i));
 
-  const loadLayoutFor = useCallback((m: Mode): Layout => {
-    try {
-      const saved = localStorage.getItem(LAYOUT_KEYS[m]);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const ids = new Set(parsed.map((l: any) => l.i));
-        const complete = DEFAULT_LAYOUTS[m].every((l) => ids.has(l.i)) && parsed.length === DEFAULT_LAYOUTS[m].length;
-        if (complete) {
-          // Carry the current min sizes over: a layout saved before a widget's
-          // minimums changed would otherwise keep re-breaking on every load.
-          const mins = new Map(DEFAULT_LAYOUTS[m].map((l) => [l.i, l]));
-          const withMins = parsed.map((l: LayoutItem) => ({ ...l, ...pickMins(mins.get(l.i)) }));
-          // Repair rather than discard — a single bad drop shouldn't cost the
-          // whole arrangement.
-          return sanitizeLayout(withMins, readShelf(m));
-        }
-        localStorage.removeItem(LAYOUT_KEYS[m]);
-      }
-    } catch {}
-    return DEFAULT_LAYOUTS[m];
-  }, []);
-
-  const loadShelfFor = useCallback((m: Mode): string[] => readShelf(m), []);
-
-  useEffect(() => {
-    setMounted(true);
-    ensureSeeded();
-    const savedMode = (localStorage.getItem(MODE_KEY) as Mode) || "personal";
-    const m: Mode = savedMode === "college" ? "college" : "personal";
-    setMode(m);
-    setLayout(loadLayoutFor(m));
-    setShelved(loadShelfFor(m));
-  }, [loadLayoutFor, loadShelfFor]);
+  // Seed the sample data before any widget asks for it. The store also seeds
+  // itself on first read, so this is only about doing it once, up front.
+  useEffect(ensureSeeded, []);
 
   // Close the shelf when clicking anywhere else.
   useEffect(() => {
@@ -288,7 +318,7 @@ export default function Dashboard() {
     if (m === mode) return;
     setMode(m);
     setLayout(loadLayoutFor(m));
-    setShelved(loadShelfFor(m));
+    setShelved(readShelf(m));
     setShelfOpen(false);
     localStorage.setItem(MODE_KEY, m);
   };
@@ -296,9 +326,9 @@ export default function Dashboard() {
   // Persist the shelf as a effect of the state, not at each call site — two
   // removals in the same tick would otherwise race and drop the first one.
   useEffect(() => {
-    if (!mounted) return;
+    if (!hydrated) return;
     try { localStorage.setItem(SHELF_KEYS[mode], JSON.stringify(shelved)); } catch {}
-  }, [shelved, mode, mounted]);
+  }, [shelved, mode, hydrated]);
 
   const loadTasks = useCallback(() => {
     demoFetch("/api/notion")
@@ -396,7 +426,7 @@ export default function Dashboard() {
     try { localStorage.removeItem(LAYOUT_KEYS[mode]); } catch {}
   };
 
-  const handleChatAction = async (action: string, args: any) => {
+  const handleChatAction = async (action: string, args: ChatActionArgs) => {
     switch (action) {
       case "add_note":
         await demoFetch("/api/notes", {
@@ -438,21 +468,26 @@ export default function Dashboard() {
         break;
       }
       case "add_event":
-        addCustomEvent({
-          title: args.title,
-          date: args.date,
-          startTime: args.startTime,
-          endTime: args.endTime,
-          allDay: args.allDay,
-          location: args.location,
-        });
+        // Both are declared required on the tool, but this is a model's output —
+        // check rather than assert, and do nothing rather than file a blank event.
+        if (args.title && args.date) {
+          addCustomEvent({
+            title: args.title,
+            date: args.date,
+            startTime: args.startTime,
+            endTime: args.endTime,
+            allDay: args.allDay,
+            location: args.location,
+          });
+        }
         break;
       case "delete_event":
         deleteCustomEventByTitle(String(args.title ?? ""), args.date);
         break;
       case "add_quick_link": {
+        if (!args.label || !args.url) break;
         const saved = localStorage.getItem("lucky_links");
-        const links = saved ? JSON.parse(saved) : [];
+        const links: unknown[] = saved ? JSON.parse(saved) : [];
         links.push({ id: crypto.randomUUID(), label: args.label, url: args.url, icon: args.icon ?? "🔗" });
         localStorage.setItem("lucky_links", JSON.stringify(links));
         setLinksRefreshKey((k) => k + 1);
@@ -481,7 +516,7 @@ export default function Dashboard() {
     clubs: <ClubsWidget />,
   };
 
-  if (!mounted) return null;
+  if (!hydrated) return null;
 
   return (
     <div className="min-h-screen p-4 md:p-6 dashboard-bg">

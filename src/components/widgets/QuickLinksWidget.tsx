@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface Link {
   id: string;
@@ -31,19 +31,24 @@ const COLLEGE_LINKS: Link[] = [
   { id: "dining", label: "Dining Menus", url: "https://dining.purdue.edu/menus", icon: "🍽" },
 ];
 
+/** Read once, at mount. `storageKey` is fixed per instance — the personal and
+ *  college boards mount separate copies — so there is nothing to re-read. */
+function readLinks(storageKey: string, defaults: Link[]): Link[] {
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as Link[]) : defaults;
+  } catch {
+    return defaults;
+  }
+}
+
 export default function QuickLinksWidget({ storageKey = "lucky_links", variant = "personal" }: { storageKey?: string; variant?: "personal" | "college" }) {
   const defaults = variant === "college" ? COLLEGE_LINKS : DEFAULT_LINKS;
-  const [links, setLinks] = useState<Link[]>(defaults);
+  const [links, setLinks] = useState<Link[]>(() => readLinks(storageKey, defaults));
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ label: "", url: "", icon: "🔗" });
-  const [editing, setEditing] = useState<string | null>(null);
-
-  useEffect(() => {
-    const s = localStorage.getItem(storageKey);
-    if (s) {
-      try { setLinks(JSON.parse(s)); } catch {}
-    }
-  }, [storageKey]);
 
   const save = (l: Link[]) => {
     setLinks(l);

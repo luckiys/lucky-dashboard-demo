@@ -4,7 +4,7 @@ A public, fully interactive demo of my personal command center: a drag-to-arrang
 dashboard that pulls my coursework, calendar, now-playing, weather and news into one
 board and lets me act on all of it in one place.
 
-**Live demo →** _(deployed on Vercel — link in the repo description)_
+**Live demo → https://lucky-dashboard-demo-luckiys-projects.vercel.app**
 
 Everything below is the real application. What changed is where the data comes from:
 the live version reads my Notion workspace, a Google Calendar ICS feed, Spotify and a
